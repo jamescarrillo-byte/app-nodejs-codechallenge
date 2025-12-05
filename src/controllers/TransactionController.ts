@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../database/data-source";
 import { Transaction } from "../entities/Transaction";
+import { publishTransactionCreatedEvent } from "../services/KafkaService";
 
 // Servicio para crear una nueva transacción (POST)
 export const createTransaction = async (req: Request, res: Response) => {
@@ -33,6 +34,9 @@ export const createTransaction = async (req: Request, res: Response) => {
     });
 
     newTransaction = await transactionRepository.save(newTransaction);
+
+    // 2. Send transaction Created event
+    await publishTransactionCreatedEvent(newTransaction);
 
     return res.status(201).json({
       message: "Transaction created and pending validation",
