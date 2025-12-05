@@ -2,7 +2,7 @@ import { Kafka, ITopicConfig } from "kafkajs";
 import { Transaction } from "../entities/Transaction";
 import { AppDataSource } from "../database/data-source";
 
-// --- Configuración de Kafka ---
+// --- Kafka Configuration ---
 const kafka = new Kafka({
   clientId: "anti-fraud-service",
   brokers: ["localhost:9092"],
@@ -14,12 +14,16 @@ const TRANSACTION_STATUS_TOPIC = "transaction-status-updated";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Ensures that all required Kafka topics exist.
+ * If some topics are missing, they are created automatically.
+ */
 async function ensureTopicsExist() {
   const admin = kafka.admin();
   try {
     await admin.connect();
 
-    console.log("[Kafka Admin] Conectado para verificar tópicos.");
+    console.log("[Kafka Admin] Connected to verify topics");
 
     const topicsToCreate: ITopicConfig[] = [
       {
@@ -42,52 +46,55 @@ async function ensureTopicsExist() {
 
     if (topicsNeedingCreation.length > 0) {
       console.log(
-        `[Kafka Admin] Creando ${topicsNeedingCreation.length} tópicos faltantes...`
+        `[Kafka Admin] Creating ${topicsNeedingCreation.length} missing topic(s)...`
       );
       await admin.createTopics({
         topics: topicsNeedingCreation,
         waitForLeaders: true,
       });
-      console.log("[Kafka Admin] Tópicos creados exitosamente.");
+      console.log("[Kafka Admin] Topics created successfully.");
     } else {
-      console.log("[Kafka Admin] Todos los tópicos requeridos ya existen.");
+      console.log("[Kafka Admin] All required topics already exist.");
     }
   } catch (error) {
-    console.error("[Kafka Admin] Error al asegurar tópicos:", error);
+    console.error("[Kafka Admin] Error ensuring topics:", error);
     throw error;
   } finally {
     await admin.disconnect();
   }
 }
 
+/**
+ * Establishes a Kafka producer connection with retries.
+ */
 export async function connectKafkaProducer() {
   const MAX_RETRIES = 5;
   let attempt = 0;
 
   while (attempt < MAX_RETRIES) {
     try {
-      // 1. Asegurar la existencia de los tópicos
+      // 1. Make sure topics are available
       await ensureTopicsExist();
 
-      // 2. Conectar el productor
-      console.log("[Kafka] Conectando Producer...");
+      // 2. Connect the producer
+      console.log("[Kafka] Connecting producer...");
       await producer.connect();
-      console.log("[Kafka] Producer conectado exitosamente.");
-      return; // Éxito
+      console.log("[Kafka] Producer connected successfully.");
+      return;
     } catch (error) {
       attempt++;
 
       const nextDelay = 2000 * Math.pow(2, attempt - 1);
 
       console.warn(
-        `[Kafka] Intento ${attempt} fallido. Reintentando en ${
+        `[Kafka] Attempt ${attempt} failed. Retrying in ${
           nextDelay / 1000
         }s. Error: ${(error as any).message}`
       );
 
       if (attempt >= MAX_RETRIES) {
         console.error(
-          "[Kafka] Error FATAL: Máximo de reintentos alcanzado. No se pudo conectar a Kafka."
+          "[Kafka] FATAL: Maximum retry attempts reached. Kafka connection failed."
         );
         throw error;
       }
@@ -98,12 +105,12 @@ export async function connectKafkaProducer() {
 }
 
 /**
- * publicador de mensajes para procesar
- * @param transaction 
+ * Publishes a "transaction created" event.
+ * This event is consumed by the Anti-Fraud service.
  */
 export async function publishTransactionCreatedEvent(transaction: Transaction) {
   try {
-    // mapping message to send
+    // Map and serialize message
     const message = {
       transactionExternalId: transaction.transactionExternalId,
       value: transaction.value,
@@ -120,23 +127,25 @@ export async function publishTransactionCreatedEvent(transaction: Transaction) {
     });
 
     console.log(
-      `[Kafka] Evento 'Transaction Created' enviado para ID: ${transaction.transactionExternalId}`
+      `[Kafka] 'Transaction Created' event sent for ID: ${transaction.transactionExternalId}`
     );
   } catch (error) {
-    console.error("[Kafka] Error publicando el evento:", error);
+    console.error("[Kafka] Error publishing event:", error);
   }
 }
 
 /**
- * Consumidor 1: Simula micro Anti-fraud.
- * Aplica regla (value > 1000) y produce el resultado
+ * Consumer 1 — Anti-Fraud Microservice.
+ * Applies a simple rule: if value > 1000 ⇒ rejected, otherwise approved.
+ * Then publishes the result to the "transaction-status-updated" topic.
  */
 export async function startAntiFraudService() {
   const ANTI_FRAUD_GROUP_ID = "anti-fraud-processor";
   const consumer = kafka.consumer({ groupId: ANTI_FRAUD_GROUP_ID });
 
   await consumer.connect();
-  // Suscripción al tópico de transacciones creadas
+
+  // Subscribe to new transaction events
   await consumer.subscribe({
     topic: TRANSACTION_CREATED_TOPIC,
     fromBeginning: false,
@@ -146,17 +155,17 @@ export async function startAntiFraudService() {
     eachMessage: async ({ message }) => {
       const transactionData = JSON.parse(message.value?.toString() || "{}");
       console.log(
-        `[Anti-Fraud] Evaluando transacción: ${transactionData.transactionExternalId} (Valor: ${transactionData.value})`
+        `[Anti-Fraud] Evaluating transaction: ${transactionData.transactionExternalId} (Value: ${transactionData.value})`
       );
 
       let newStatus = "approved";
 
-      // REGLA DE NEGOCIO
+      // BUSINESS RULE
       if (transactionData.value > 1000) {
         newStatus = "rejected";
       }
 
-      // Enviar evento de actualización de estado (publicar al segundo tópico)
+      // Publish fraud decision
       await producer.send({
         topic: TRANSACTION_STATUS_TOPIC,
         messages: [
@@ -171,18 +180,19 @@ export async function startAntiFraudService() {
       });
 
       console.log(
-        `[Anti-Fraud] Decisión para ${transactionData.transactionExternalId}: ${newStatus}. Publicando a ${TRANSACTION_STATUS_TOPIC}`
+        `[Anti-Fraud] Decision for ${transactionData.transactionExternalId}: ${newStatus}. Published to ${TRANSACTION_STATUS_TOPIC}`
       );
     },
   });
+
   console.log(
-    '[Kafka Consumer] Anti-Fraud Service iniciado, escuchando en el tópico "transaction-created".'
+    '[Kafka Consumer] Anti-Fraud Service started, listening on "transaction-created".'
   );
 }
 
 /**
- * Consumidor 2: Actualiza el estado de la DB.
- * Escucha 'transaction-status-updated' y actualiza el campo transactionStatus.
+ * Consumer 2 — Database Updater.
+ * Listens to status updates and updates the transactionStatus field in the DB.
  */
 export async function startStatusConsumer() {
   const STATUS_UPDATE_GROUP_ID = "transaction-status-group";
@@ -192,7 +202,7 @@ export async function startStatusConsumer() {
 
   await consumer.connect();
 
-  // Suscripción al tópico de estado actualizado
+  // Subscribe to the status-update topic
   await consumer.subscribe({
     topic: TRANSACTION_STATUS_TOPIC,
     fromBeginning: false,
@@ -201,22 +211,23 @@ export async function startStatusConsumer() {
   await consumer.run({
     eachMessage: async ({ message }) => {
       const data = JSON.parse(message.value?.toString() || "{}");
-
       const { transactionExternalId, newStatus } = data;
 
       if (transactionExternalId && newStatus) {
-        // Ejecutar la actualización en la base de datos
+        // Update transaction state in the DB
         await transactionRepository.update(
           { transactionExternalId },
           { transactionStatus: newStatus }
         );
+
         console.log(
-          `[DB Updater] Estado de ${transactionExternalId} actualizado a ${newStatus}`
+          `[DB Updater] Status of ${transactionExternalId} updated to ${newStatus}`
         );
       }
     },
   });
+
   console.log(
-    '[Kafka Consumer] DB Status Updater iniciado, escuchando en el tópico "transaction-status-updated".'
+    '[Kafka Consumer] DB Status Updater started, listening on "transaction-status-updated".'
   );
 }

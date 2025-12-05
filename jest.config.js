@@ -1,31 +1,30 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
-  // Entorno de ejecución: node para backend
+  // Use ts-jest so Jest can run tests written in TypeScript
   preset: 'ts-jest',
   testEnvironment: 'node',
-  
-  // Mapeo de cómo transformar archivos
-  // Le decimos a Jest que use 'ts-jest' para manejar los archivos .ts
+
+  // Tell Jest how to handle .ts files before running the tests
   transform: {
     '^.+\\.ts?$': 'ts-jest',
   },
-  
-  // Dónde encontrar los archivos de prueba
-  // Asumiendo que tu archivo de prueba está en 'src/controllers/tests/'
+
+  // Where Jest should look for test files
   testMatch: ['**/src/**/*.test.ts'],
-  
-  // Módulos que ignorar (excluir node_modules)
+
+  // Skip transforming anything inside node_modules (keeps things fast and clean)
   transformIgnorePatterns: ['<rootDir>/node_modules/'],
-  
-  // Opcional: Si tienes un archivo tsconfig.json que necesitas usar
+
   globals: {
     'ts-jest': {
-      tsconfig: 'tsconfig.json',
+      tsconfig: 'tsconfig.json', // Reuse the project's main TS config
     },
   },
-  
-  // Configuración de reportería
+
+  // Show more detailed output when running tests
   verbose: true,
+
+  // Enable coverage reporting
   collectCoverage: true,
-  coverageDirectory: 'coverage',
+  coverageDirectory: 'coverage', // Folder where Jest will store coverage reports
 };

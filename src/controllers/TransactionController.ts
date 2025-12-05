@@ -3,7 +3,7 @@ import { AppDataSource } from "../database/data-source";
 import { Transaction } from "../entities/Transaction";
 import { publishTransactionCreatedEvent } from "../services/KafkaService";
 
-// Servicio para crear una nueva transacción (POST)
+// Handles creating a new transaction (POST)
 export const createTransaction = async (req: Request, res: Response) => {
   const {
     accountExternalIdDebit,
@@ -12,6 +12,7 @@ export const createTransaction = async (req: Request, res: Response) => {
     value,
   } = req.body;
 
+  // Basic input validation before touching the DB
   if (
     !accountExternalIdDebit ||
     !accountExternalIdCredit ||
@@ -24,18 +25,19 @@ export const createTransaction = async (req: Request, res: Response) => {
   const transactionRepository = AppDataSource.getRepository(Transaction);
 
   try {
-    // 1. Save Transaction with pending Status
+    // 1. Prepare the transaction entity before saving
     let newTransaction = transactionRepository.create({
       accountExternalIdDebit,
       accountExternalIdCredit,
       tranferTypeId,
-      value: parseFloat(value), // Aseguramos que sea número
+      value: parseFloat(value), // Make sure the value is treated as a number
       transactionStatus: "pending",
     });
 
+    // 2. Persist the transaction in the database
     newTransaction = await transactionRepository.save(newTransaction);
 
-    // 2. Send transaction Created event
+    // 3. Publish event so other services can validate the transaction later
     await publishTransactionCreatedEvent(newTransaction);
 
     return res.status(201).json({
@@ -48,9 +50,9 @@ export const createTransaction = async (req: Request, res: Response) => {
   }
 };
 
-// Servicio para obtener una transacción por ID (GET)
+// Handles retrieving a transaction by ID (GET)
 export const getTransactionById = async (req: Request, res: Response) => {
-  const { id } = req.params; // Capturamos el ID de la ruta
+  const { id } = req.params; // ID passed through the route
 
   if (!id) {
     return res.status(400).json({ message: "Transaction ID is required" });
@@ -59,9 +61,9 @@ export const getTransactionById = async (req: Request, res: Response) => {
   const transactionRepository = AppDataSource.getRepository(Transaction);
 
   try {
-    // Buscamos la transacción por su ID externo
+    // Look up the transaction using its external ID
     const transaction = await transactionRepository.findOne({
-      where: { transactionExternalId: id }
+      where: { transactionExternalId: id },
     });
 
     if (!transaction) {
@@ -74,7 +76,7 @@ export const getTransactionById = async (req: Request, res: Response) => {
         name: transaction.tranferTypeId,
       },
       transactionStatus: {
-        name: transaction.transactionStatus, // 'pending', 'approved', 'rejected'
+        name: transaction.transactionStatus, // pending, approved, rejected
       },
       value: transaction.value,
       createdAt: transaction.createdAt,
