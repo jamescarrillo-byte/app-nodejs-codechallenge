@@ -9,7 +9,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ApplicationConfig {
 
-    // Se define el bean para el Use Case
     @Bean
     public TransactionService transactionService(
             TransactionRepositoryPort transactionRepositoryPort,

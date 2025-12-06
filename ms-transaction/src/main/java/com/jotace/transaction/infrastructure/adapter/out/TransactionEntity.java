@@ -9,9 +9,6 @@ import java.util.UUID;
 public class TransactionEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // Assuming an auto-increment primary key for the DB
-    private Long id;
-
     @Column(name = "transaction_external_id", unique = true, nullable = false)
     private UUID transactionExternalId;
 
@@ -47,9 +44,6 @@ public class TransactionEntity {
         this.createdAt = createdAt;
     }
 
-    // Getters and Setters for JPA
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
     public UUID getTransactionExternalId() { return transactionExternalId; }
     public void setTransactionExternalId(UUID transactionExternalId) { this.transactionExternalId = transactionExternalId; }
     public String getAccountExternalIdDebit() { return accountExternalIdDebit; }

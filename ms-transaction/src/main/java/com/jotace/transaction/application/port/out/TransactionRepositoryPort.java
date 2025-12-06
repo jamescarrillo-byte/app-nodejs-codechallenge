@@ -11,4 +11,6 @@ public interface TransactionRepositoryPort {
 
     Optional<Transaction> findByExternalId(UUID transactionExternalId);
 
+    void updateStatus(UUID transactionExternalId, String newStatus);
+
 }

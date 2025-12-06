@@ -55,4 +55,17 @@ public class JpaTransactionAdapter implements TransactionRepositoryPort {
                 .map(this::toDomain);
     }
 
+    @Override
+    public void updateStatus(UUID transactionExternalId, String newStatus) {
+        TransactionEntity entity = jpaRepository.findByTransactionExternalId(
+                transactionExternalId
+        ).orElseThrow(() -> new IllegalArgumentException("Transaction not found"));
+
+        entity.setTransactionStatus(newStatus);
+
+        TransactionEntity saved = jpaRepository.save(entity);
+
+        toDomain(saved);
+    }
+
 }
